@@ -2,16 +2,24 @@ import os
 import telebot
 from dotenv import load_dotenv, find_dotenv
 import requests
+from pprint import pprint
 
 load_dotenv(find_dotenv())
-TOKEN = os.getenv('BOT_TOKEN', 'BOT_TOKEN does not exist.')
 
 UNITS = 'metric'
 LOCATION = 'Moscow'
 LANGUAGE = 'en'
 GET_NOTIFICATIONS = False
 
+TOKEN = os.getenv('BOT_TOKEN', 'BOT_TOKEN does not exist.')
 bot = telebot.TeleBot(TOKEN)
+
+API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
+querystring = {
+    'q': LOCATION,
+    'units': UNITS,
+    'appid': os.getenv('API_KEY', 'API_KEY does not exist.')
+}
 
 
 @bot.message_handler(commands=['start'])
@@ -19,7 +27,7 @@ def send_welcome(message):
     bot.send_message(
         message.chat.id,
         '''Hey, I'm the Weather Cat.
-I can show you the weather forecast up for 5 days.
+I can get you the weather forecast up for 5 days.
 Just send me one of these commands:
 /current - get the current weather for a location or city
 /weatherfull - get a 5-day forecast for a location or city
@@ -44,7 +52,13 @@ Just send me one of these commands:
 
 @bot.message_handler(commands=['current'])
 def get_current_weather(message):
-    bot.send_message(message.chat.id, 'Current weather:')
+    response = requests.request("GET", API_URL, params=querystring).json()
+    city = response['city']['name']
+    temp = response['list'][0]['main']['temp']
+    desc = response['list'][0]['weather'][0]['description']
+    # pprint(response)
+    print(f"Current weather in {city}: {temp}, {desc}")
+    bot.send_message(message.chat.id, f"Current weather in {city}: {temp}, {desc}")
 
 
 @bot.message_handler(commands=['weatherfull'])
