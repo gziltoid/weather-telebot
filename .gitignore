@@ -2,6 +2,7 @@
 __pycache__/
 *.log
 local_settings.py
+*.ipynb
 .ipynb_checkpoints
 __pypackages__/
 .env
