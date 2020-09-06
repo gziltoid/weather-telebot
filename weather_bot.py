@@ -18,9 +18,12 @@ bot = telebot.TeleBot(TOKEN)
 def send_welcome(message):
     bot.send_message(
         message.chat.id,
-        '''Hey! I'm the Weather Cat.
+        '''Hey, I'm the Weather Cat.
 I can show you the weather forecast up for 5 days.
-/help - view available commands
+Just send me one of these commands:
+/current - get the current weather for a location or city
+/weatherfull - get a 5-day forecast for a location or city
+/settings - change your preferences
 
 To start, send a location pin or enter your area or city:
 '''
