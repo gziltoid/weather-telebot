@@ -61,29 +61,23 @@ states = defaultdict(
 def send_welcome(message):
     bot.send_message(
         message.from_user.id,
-        '''Hey, I'm the Weather Cat.
-I can show you a weather forecast up to 5 days.
-Just send me one of these commands:
-/current - get the current weather for a location
-/tomorrow - get a forecast for tomorrow
-/forecast - get a 5-day forecast
-/settings - change your preferences
-
-To start, send a location pin or enter your city:
-''')
+        "Hey, I'm the Weather Cat 🐱\nI can show you a weather forecast up to 5 days 🐾\nJust send me one of these "
+        "commands:"
+    )
+    show_commands(message)
+    bot.send_message(message.from_user.id, '🐈 To start, send a location pin or enter your city:')
     states[message.from_user.id]['state'] = State.WELCOME
-
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.WELCOME)
 def welcome_handler(message):
     message_text = message.text.strip().lower()
     if message_text in ['привет', 'hello', 'hi', 'hey']:
-        bot.reply_to(message, f'Hi, {message.from_user.first_name}.\nTo start, send a location pin or enter your city:')
+        bot.reply_to(message, f'Hi, {message.from_user.first_name}.\n🐈 To start, send a location pin or enter your city:')
     elif message_text[0] != '/':
         # TODO location pin
         bot.send_chat_action(message.from_user.id, 'typing')
         if check_if_location_exists(message.text):
-            location = message.text.strip()
+            location = message.text.strip().title()
             bot.send_message(message.from_user.id, f'Done. Current city: {location}')
             show_commands(message)
             states[message.from_user.id]['state'] = State.MAIN
@@ -91,9 +85,9 @@ def welcome_handler(message):
             # TODO switch_to_state(print_message, state)
         else:
             bot.send_message(message.from_user.id, 'Location not found.')
-            bot.send_message(message.from_user.id, 'To start, send a location pin or enter your city:')
+            bot.send_message(message.from_user.id, '🐈 To start, send a location pin or enter your city:')
     else:
-        bot.send_message(message.from_user.id, 'To start, send a location pin or enter your city:')
+        bot.send_message(message.from_user.id, '🐈 To start, send a location pin or enter your city:')
 
 
 def check_if_location_exists(loc):
@@ -107,10 +101,10 @@ def check_if_location_exists(loc):
 
 
 def show_commands(message):
-    bot.send_message(message.from_user.id, '''/current - get the current weather for a location
-/tomorrow - get a forecast for tomorrow
-/forecast - get a 5-day forecast
-/settings - change your preferences''')
+    bot.send_message(message.from_user.id, '''⛅ /current - get the current weather for a location
+➡️️️ /tomorrow - get a forecast for tomorrow
+📆 /forecast - get a 5-day forecast
+☑️️ /settings - change your preferences''')
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.MAIN)
@@ -188,10 +182,10 @@ def show_settings(message):
     bot.send_message(
         message.from_user.id,
         f'''Settings:
-/location - change your location. (Current location: {location})
-/language - select a forecast language. (Current forecast language: {language})
-/units - change your unit preferences. (Current units: {units})
-/back - back to Weather''')
+🌎 /location - change your location (current: {location})
+🔤️ /language - select a forecast language (current: {language})
+📐 /units - change your unit preferences (current: {units})
+↩️ /back - back to Weather''')
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.SETTINGS)
@@ -223,14 +217,14 @@ def show_location(message):
 def show_language(message):
     language = states[message.from_user.id]['settings'].language.value
     bot.send_message(message.from_user.id, f'Current forecast language: {language}.\n/back - back to '
-                                           f'Settings\nSelect a forecast language: en | ru')
+                                           f'Settings\nSelect a forecast language: 🇺🇸 en | 🇷🇺 ru')
 
 
 def show_units(message):
     units = states[message.from_user.id]['settings'].units.value
     bot.send_message(
         message.from_user.id,
-        f'Current units: {units}.\n/back - back to Settings\nChoose metric or imperial:')
+        f'Current units: {units}.\n/back - back to Settings\nChoose units: 📏 metric | 👑 imperial')
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.SETTING_LOCATION)
@@ -239,8 +233,8 @@ def setting_location_handler(message):
     if message_text != '/back':
         # TODO location pin
         if check_if_location_exists(message_text):
-            location = message_text
-            states[message.from_user.id]['settings'].location = location
+            states[message.from_user.id]['settings'].location = message_text.title()
+            location = states[message.from_user.id]['settings'].location
             bot.send_message(message.from_user.id, f'Updated. Current city: {location}')
             show_settings(message)
             states[message.from_user.id]['state'] = State.SETTINGS
