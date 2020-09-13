@@ -7,6 +7,7 @@ import sys
 from enum import Enum
 from collections import defaultdict
 from dataclasses import dataclass
+import random
 
 load_dotenv(find_dotenv())
 
@@ -46,6 +47,30 @@ class Settings:
 # Constants
 API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
 DEGREE_SIGNS = {Units.METRIC: '℃', Units.IMPERIAL: '℉'}
+BAD_COMMAND_ANSWERS = (
+    'Sorry, I didn\'t get what you mean.',
+    'Sorry, I didn\'t quite get it.',
+    'Eh? I don\'t get it.',
+    'Oops. Please try again.',
+    'Sorry, I don\'t understand.',
+    'Sorry, I didn\'t catch that.',
+    'It makes no sense to me.',
+    'It\'s a mystery to me.',
+    'It\'s completely beyond me.',
+    'I can\'t get my head around it.',
+    'Sorry?',
+    'Sorry, what?',
+    'I’m sorry, what was that?',
+    'Excuse me?',
+    'Pardon?',
+    'What?',
+    'Hmm?',
+    'Come again?',
+    'This is all Greek to me.',
+    'I can’t make head nor tail of what you’re saying.',
+    'Bad command. Please try again.',
+    'Not recognized command. Please try again.'
+)
 
 # Globals
 bot = telebot.TeleBot(TOKEN)
@@ -106,6 +131,8 @@ def show_commands(message):
 📆 /forecast - get a 5-day forecast
 ☑️️ /settings - change your preferences''')
 
+def reply_to_bad_command(message):
+    bot.reply_to(message, random.choice(BAD_COMMAND_ANSWERS))
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.MAIN)
 def main_handler(message):
@@ -123,7 +150,7 @@ def main_handler(message):
         show_settings(message)
         states[message.from_user.id]['state'] = State.SETTINGS
     else:
-        bot.reply_to(message, 'Sorry, I didn\'t get what you mean.')
+        reply_to_bad_command(message)
 
 
 def get_current_weather(message):
@@ -204,7 +231,7 @@ def settings_handler(message):
         show_commands(message)
         states[message.from_user.id]['state'] = State.MAIN
     else:
-        bot.reply_to(message, 'Sorry, I didn\'t get what you mean.')
+        reply_to_bad_command(message)
 
 
 def show_location(message):
@@ -262,7 +289,7 @@ def setting_language_handler(message):
         show_settings(message)
         states[message.from_user.id]['state'] = State.SETTINGS
     else:
-        bot.reply_to(message, 'Sorry, I didn\'t get what you mean.')
+        reply_to_bad_command(message)
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id]['state'] == State.SETTING_UNITS)
@@ -281,7 +308,7 @@ def setting_units_handler(message):
         show_settings(message)
         states[message.from_user.id]['state'] = State.SETTINGS
     else:
-        bot.reply_to(message, 'Sorry, I didn\'t get what you mean.')
+        reply_to_bad_command(message)
 
 
 if __name__ == '__main__':
