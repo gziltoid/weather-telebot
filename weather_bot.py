@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
+from datetime import datetime, timedelta, tzinfo
 
 import os
 import random
@@ -8,6 +9,7 @@ import requests
 import sys
 import telebot
 from dotenv import load_dotenv, find_dotenv
+from pprint import pprint
 
 load_dotenv(find_dotenv())
 
@@ -37,6 +39,7 @@ class State(Enum):
     SETTING_UNITS = 6
 
 
+# Dataclasses
 @dataclass
 class Settings:
     location: str
@@ -88,10 +91,24 @@ states = defaultdict(
     )
 )
 
+buttons = ['Current', 'Tomorrow', 'For 5 days', 'Settings']
+
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
+
+    # markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    # row = [telebot.types.KeyboardButton(name) for name in buttons]
+    # markup.row(*buttons[:2])
+    # markup.row(*buttons[2:])
+    # btn = telebot.types.KeyboardButton('Location', request_location=True)
+    # markup.add(btn)
+    # markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+    # markup.add(telebot.types.InlineKeyboardButton(text='Press me', callback_data='button:2'))
+    # bot.send_message(user_id, 'wow', reply_markup=markup)
+    # markup = telebot.types.ReplyKeyboardRemove(selective=False)
+
     bot.send_message(
         user_id,
         "Hey, I'm the Weather Cat 🐱\nI can show you a weather forecast up to 5 days 🐾\nJust send me one of these "
@@ -100,6 +117,11 @@ def send_welcome(message):
     show_commands(user_id)
     bot.send_message(user_id, '🐈 To start, send a location pin or enter your city:')
     states[user_id].state = State.WELCOME
+
+
+@bot.message_handler(content_types=['location'])
+def location_handler(message):
+    print('Got location:', message.location)
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.WELCOME)
@@ -130,6 +152,7 @@ def check_if_location_exists(location):
     except requests.exceptions.RequestException as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
     else:
+        # pprint(response.json())
         return response.status_code == 200
 
 
@@ -167,14 +190,14 @@ def main_handler(message):
 def get_current_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
-    # TODO API module
+    querystring = {
+        'q': settings.location,
+        'lang': settings.language.value,
+        'units': settings.units.value,
+        'appid': OWM_API_KEY,
+    }
+    # TODO API module, request_forecast(), get_current_weather_from_response()
     try:
-        querystring = {
-            'q': settings.location,
-            'lang': settings.language.value,
-            'units': settings.units.value,
-            'appid': OWM_API_KEY,
-        }
         response = requests.get(API_URL, params=querystring)
     except requests.exceptions.RequestException as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
@@ -182,6 +205,8 @@ def get_current_weather(user_id):
     else:
         if response.status_code == 200:
             response = response.json()
+            pprint(response['list'][0])
+            pprint(querystring)
             city = response['city']['name']
             country = response['city']['country']
             temp = int(round(response['list'][0]['main']['temp']))
@@ -199,11 +224,65 @@ def get_current_weather(user_id):
 def get_tomorrow_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     location = states[user_id].settings.location
-    bot.send_message(user_id, f"Tomorrow\'s weather in {location}: XX")
-    # TODO
+    settings = states[user_id].settings
+    report = ''
+    querystring = {
+        'q': settings.location,
+        'lang': settings.language.value,
+        'units': settings.units.value,
+        'appid': OWM_API_KEY,
+    }
+    try:
+        response = requests.get(API_URL, params=querystring)
+    except requests.exceptions.RequestException as e:
+        sys.stderr.write(f"Exception: {e}" + os.linesep)
+        bot.send_message(user_id, 'Oops. Try again.')
+    else:
+        # TODO try/except ValueError
+        if response.status_code == 200:
+            response = response.json()
+            # pprint(response)
+            city = response['city']['name']
+            country = response['city']['country']
+            tzoffset = int(response['city']['timezone'])
+            units = states[user_id].settings.units
+            today = response_day_to_local_time(response['list'][0], tzoffset)
+            tomorrow = (today + timedelta(days=+1))
+            for day in response['list']:
+                dt = response_day_to_local_time(day, tzoffset)
+                if dt.day == today.day:
+                    continue
+                elif dt.day == tomorrow.day:
+                    temp = int(round(day['main']['temp']))
+                    desc = day['weather'][0]['description']
+                    time = dt.strftime('%H:%M')
+                    report += f"{time}: {temp}{DEGREE_SIGNS[units]}, {desc}\n"
+                else:
+                    break
+            # print(report)
+            bot.send_message(user_id, f"{tomorrow.strftime('%B %d')} - {city}, {country}:\n{report}")
+            # pprint(response.json())
+            # TODO
+        else:
+            error_message = response.json()['message']
+            bot.send_message(user_id, error_message)
+
+class SimpleTimezone(tzinfo):
+    def __init__(self, offset):
+        self.offset = offset
+
+    def utcoffset(self, dt):
+        return timedelta(seconds=self.offset)
+
+    def dst(self, dt):
+        return timedelta(0)
+
+def response_day_to_local_time(day, tzoffset):
+    return datetime.fromtimestamp(int(day['dt']), tz=SimpleTimezone(tzoffset))
 
 
 def get_forecast(user_id):
+    # TODO extract time, 5:00 and 14:00
     bot.send_chat_action(user_id, 'typing')
     location = states[user_id].settings.location
     bot.send_message(user_id, f'5-day forecast for {location}: YY')
