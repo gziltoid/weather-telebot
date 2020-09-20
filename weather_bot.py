@@ -111,7 +111,7 @@ def send_welcome(message):
 
     bot.send_message(
         user_id,
-        "Hey, I'm the Weather Cat 🐱\nI can show you a weather forecast up to 5 days 🐾\nJust send me one of these "
+        "Hey, I'm the Weather Cat 🐱\nI can show you a weather forecast up to 4 days 🐾\nJust send me one of these "
         "commands:"
     )
     show_commands(user_id)
@@ -159,7 +159,7 @@ def check_if_location_exists(location):
 def show_commands(user_id):
     bot.send_message(user_id, '''⛅ /current - get the current weather for a location
 ➡️️️ /tomorrow - get a forecast for tomorrow
-📆 /forecast - get a 5-day forecast
+📆 /forecast - get a 4-day forecast
 ☑️️ /settings - change your preferences''')
 
 
@@ -200,14 +200,14 @@ def get_current_weather(user_id):
     response = request_forecast(querystring)
     if response is not None:
         pprint(response['list'][0])
-        # FIXME try/except
         location_data, report = get_current_weather_from_response(response)
-        units = states[user_id].settings.units
-        bot.send_message(user_id,
-                         f"Current weather in {location_data.city}, {location_data.country}: "
-                         f"{report.temp}{DEGREE_SIGNS[units]}, {report.desc}")
-    else:
-        bot.send_message(user_id, 'Oops. Try again.')
+        if location_data is not None:
+            units = states[user_id].settings.units
+            message = f"Current weather in {location_data.city}, {location_data.country}: " \
+                      f"{report.temp}{DEGREE_SIGNS[units]}, {report.desc}"
+            bot.send_message(user_id, message)
+            return
+    bot.send_message(user_id, 'Server error. Please try again.')
 
 
 LocationData = namedtuple('LocationData', 'city country')
@@ -222,9 +222,9 @@ def get_current_weather_from_response(response):
         country = response['city']['country']
         temp = int(round(response['list'][0]['main']['temp']))
         desc = response['list'][0]['weather'][0]['description']
-    except Exception as e:
+    except ValueError as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
-        return None
+        return None, None
     return LocationData(city=city, country=country), CurrentWeatherReport(temp=temp, desc=desc)
 
 
@@ -259,7 +259,7 @@ def get_tomorrow_weather(user_id):
                 message += f"{report.datetime.strftime('%H:%M')}: {report.temp}{DEGREE_SIGNS[units]}, {report.desc}\n"
             bot.send_message(user_id, message)
             return
-    bot.send_message(user_id, 'Server error. Try again.')
+    bot.send_message(user_id, 'Server error. Please try again.')
 
 
 def get_tomorrow_weather_from_response(response):
@@ -270,13 +270,13 @@ def get_tomorrow_weather_from_response(response):
         today = response_day_to_local_time(response['list'][0], tzoffset)
         tomorrow = (today + timedelta(days=+1))
         reports = []
-        for day in response['list']:
-            dt = response_day_to_local_time(day, tzoffset)
+        for interval in response['list']:
+            dt = response_day_to_local_time(interval, tzoffset)
             if dt.day == today.day:
                 continue
             elif dt.day == tomorrow.day:
-                temp = int(round(day['main']['temp']))
-                desc = day['weather'][0]['description']
+                temp = int(round(interval['main']['temp']))
+                desc = interval['weather'][0]['description']
                 reports.append(TomorrowWeatherReport(datetime=dt, temp=temp, desc=desc))
             else:
                 break
@@ -304,7 +304,6 @@ def response_day_to_local_time(day, tzoffset):
 def get_forecast(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
-    location = states[user_id].settings.location
     querystring = {
         'q': settings.location,
         'lang': settings.language.value,
@@ -315,32 +314,49 @@ def get_forecast(user_id):
     if response is not None:
         pprint(response['list'][0])
         units = states[user_id].settings.units
-        # FIXME try/except
         location_data, reports = get_forecast_from_response(response)
-        message = f'{reports[0].date} - {location_data.city}, {location_data.country}:\n'
-        for report in reports:
-            message += f"{report.time}: {report.temp}{DEGREE_SIGNS[units]}, {report.desc}\n"
-        bot.send_message(user_id, message)
-        bot.send_message(user_id, f'5-day forecast for {location}: YY')
-    else:
-        bot.send_message(user_id, 'Oops. Try again.')
+        if location_data is not None:
+            lines = [f'4-day forecast for {location_data.city}, {location_data.country}:']
+            for report in reports:
+                lines.append(f"{report.date.strftime('%b %d')}: {report.min}-{report.max}{DEGREE_SIGNS[units]}, {report.desc}")
+            bot.send_message(user_id, '\n'.join(lines))
+            return
+    bot.send_message(user_id, 'Server error. Please try again.')
 
 def get_forecast_from_response(response):
     try:
         city = response['city']['name']
         country = response['city']['country']
         tzoffset = int(response['city']['timezone'])
+        today = response_day_to_local_time(response['list'][0], tzoffset)
         reports = []
-        for day in response['list']:
-            dt = response_day_to_local_time(day, tzoffset)
-            temp = int(round(day['main']['temp']))
-            desc = day['weather'][0]['description']
-            time = dt.strftime('%H:%M')
-            # TODO Sep 21, min: 21, max: 30 sunny
-            # reports.append(WeatherReport(date=dt.strftime('%B %d'), time=None, temp=temp, desc=desc))
-    except Exception as e:
+        days = []
+        for i, interval in enumerate(response['list']):
+            dt = response_day_to_local_time(interval, tzoffset)
+            if dt.day == today.day:
+                continue
+            else:
+                shift = 8
+                for d in range(4):
+                    days.append(response['list'][i + shift * d: i + shift * (d + 1)])
+                break
+
+        for day in days:
+            dt = response_day_to_local_time(day[0], tzoffset)
+            daily_temps = []
+            for interval in day:
+                temp = int(round(interval['main']['temp']))
+                desc = interval['weather'][0]['description']
+                daily_temps.append((temp, desc))
+
+            min_temp = min(daily_temps, key=lambda t_d: t_d[0])[0]
+            max_data = max(daily_temps, key=lambda t_d: t_d[0])
+            max_temp = max_data[0]
+            max_desc = max_data[1]
+            reports.append(ForecastWeatherReport(date=dt, min=min_temp, max=max_temp, desc=max_desc))
+    except ValueError as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
-        return None
+        return None, None
     return LocationData(city=city, country=country), reports
 
 def show_settings(user_id):
