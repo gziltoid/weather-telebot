@@ -1,4 +1,4 @@
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, Counter
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta, tzinfo
@@ -38,7 +38,6 @@ class State(Enum):
     SETTING_LANGUAGE = 5
     SETTING_UNITS = 6
 
-
 # Dataclasses
 @dataclass
 class Settings:
@@ -51,6 +50,12 @@ class Settings:
 class User:
     state: State
     settings: Settings
+
+
+LocationData = namedtuple('LocationData', 'city country')
+CurrentWeatherReport = namedtuple('CurrentWeatherReport', 'temp desc')
+TomorrowWeatherReport = namedtuple('TomorrowWeatherReport', 'datetime temp desc')
+ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
 
 
 # Constants
@@ -91,7 +96,7 @@ states = defaultdict(
     )
 )
 
-buttons = ['Current', 'Tomorrow', 'For 5 days', 'Settings']
+main_buttons = ['Current', 'Tomorrow', 'For 4 days', 'Settings']
 
 
 @bot.message_handler(commands=['start'])
@@ -119,9 +124,9 @@ def send_welcome(message):
     states[user_id].state = State.WELCOME
 
 
-@bot.message_handler(content_types=['location'])
-def location_handler(message):
-    print('Got location:', message.location)
+# @bot.message_handler(content_types=['location'])
+# def location_handler(message):
+#     print('Got location:', message.location)
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.WELCOME)
@@ -152,7 +157,6 @@ def check_if_location_exists(location):
     except requests.exceptions.RequestException as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
     else:
-        # pprint(response.json())
         return response.status_code == 200
 
 
@@ -187,17 +191,22 @@ def main_handler(message):
         reply_to_bad_command(message)
 
 
+class SimpleTimezone(tzinfo):
+    def __init__(self, offset):
+        self.offset = offset
+
+    def utcoffset(self, dt):
+        return timedelta(seconds=self.offset)
+
+    def dst(self, dt):
+        return timedelta(0)
+
+
 # TODO OWM API module
 def get_current_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
-    querystring = {
-        'q': settings.location,
-        'lang': settings.language.value,
-        'units': settings.units.value,
-        'appid': OWM_API_KEY,
-    }
-    response = request_forecast(querystring)
+    response = request_forecast(settings.location, settings.language.value, settings.units.value)
     if response is not None:
         pprint(response['list'][0])
         location_data, report = get_current_weather_from_response(response)
@@ -209,46 +218,10 @@ def get_current_weather(user_id):
             return
     bot.send_message(user_id, 'Server error. Please try again.')
 
-
-LocationData = namedtuple('LocationData', 'city country')
-CurrentWeatherReport = namedtuple('CurrentWeatherReport', 'temp desc')
-TomorrowWeatherReport = namedtuple('TomorrowWeatherReport', 'datetime temp desc')
-ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
-
-
-def get_current_weather_from_response(response):
-    try:
-        city = response['city']['name']
-        country = response['city']['country']
-        temp = int(round(response['list'][0]['main']['temp']))
-        desc = response['list'][0]['weather'][0]['description']
-    except ValueError as e:
-        sys.stderr.write(f"Exception: {e}" + os.linesep)
-        return None, None
-    return LocationData(city=city, country=country), CurrentWeatherReport(temp=temp, desc=desc)
-
-
-def request_forecast(querystring):
-    try:
-        response = requests.get(API_URL, params=querystring)
-    except Exception as e:
-        sys.stderr.write(f"Exception: {e}" + os.linesep)
-        return None
-    if response.status_code == 200:
-        return response.json()
-    return None
-
-
 def get_tomorrow_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
-    querystring = {
-        'q': settings.location,
-        'lang': settings.language.value,
-        'units': settings.units.value,
-        'appid': OWM_API_KEY,
-    }
-    response = request_forecast(querystring)
+    response = request_forecast(settings.location, settings.language.value, settings.units.value)
     if response is not None:
         pprint(response['list'][0])
         units = states[user_id].settings.units
@@ -261,6 +234,52 @@ def get_tomorrow_weather(user_id):
             return
     bot.send_message(user_id, 'Server error. Please try again.')
 
+def get_forecast(user_id):
+    bot.send_chat_action(user_id, 'typing')
+    settings = states[user_id].settings
+    response = request_forecast(settings.location, settings.language.value, settings.units.value)
+    if response is not None:
+        pprint(response['list'][0])
+        units = states[user_id].settings.units
+        location_data, reports = get_forecast_from_response(response)
+        if location_data is not None:
+            lines = [f'4-day forecast for {location_data.city}, {location_data.country}:']
+            for report in reports:
+                lines.append(f"{report.date.strftime('%b %d')}: {report.min}-{report.max}{DEGREE_SIGNS[units]}, {report.desc}")
+            bot.send_message(user_id, '\n'.join(lines))
+            return
+    bot.send_message(user_id, 'Server error. Please try again.')
+
+def request_forecast(location, language, units):
+    querystring = {
+        'q': location,
+        'lang': language,
+        'units': units,
+        'appid': OWM_API_KEY,
+    }
+    try:
+        response = requests.get(API_URL, params=querystring)
+    except Exception as e:
+        sys.stderr.write(f"Exception: {e}" + os.linesep)
+        return None
+    if response.status_code == 200:
+        return response.json()
+    return None
+
+# TODO change OWM API endpoint
+def get_current_weather_from_response(response):
+    try:
+        city = response['city']['name']
+        country = response['city']['country']
+        temp = int(round(response['list'][0]['main']['temp']))
+        desc = response['list'][0]['weather'][0]['description']
+    except ValueError as e:
+        sys.stderr.write(f"Exception: {e}" + os.linesep)
+        return None, None
+    return LocationData(city=city, country=country), CurrentWeatherReport(temp=temp, desc=desc)
+
+def response_day_to_local_time(day, tzoffset):
+    return datetime.fromtimestamp(int(day['dt']), tz=SimpleTimezone(tzoffset))
 
 def get_tomorrow_weather_from_response(response):
     try:
@@ -285,44 +304,6 @@ def get_tomorrow_weather_from_response(response):
         return None, None
     return LocationData(city=city, country=country), reports
 
-
-class SimpleTimezone(tzinfo):
-    def __init__(self, offset):
-        self.offset = offset
-
-    def utcoffset(self, dt):
-        return timedelta(seconds=self.offset)
-
-    def dst(self, dt):
-        return timedelta(0)
-
-
-def response_day_to_local_time(day, tzoffset):
-    return datetime.fromtimestamp(int(day['dt']), tz=SimpleTimezone(tzoffset))
-
-
-def get_forecast(user_id):
-    bot.send_chat_action(user_id, 'typing')
-    settings = states[user_id].settings
-    querystring = {
-        'q': settings.location,
-        'lang': settings.language.value,
-        'units': settings.units.value,
-        'appid': OWM_API_KEY,
-    }
-    response = request_forecast(querystring)
-    if response is not None:
-        pprint(response['list'][0])
-        units = states[user_id].settings.units
-        location_data, reports = get_forecast_from_response(response)
-        if location_data is not None:
-            lines = [f'4-day forecast for {location_data.city}, {location_data.country}:']
-            for report in reports:
-                lines.append(f"{report.date.strftime('%b %d')}: {report.min}-{report.max}{DEGREE_SIGNS[units]}, {report.desc}")
-            bot.send_message(user_id, '\n'.join(lines))
-            return
-    bot.send_message(user_id, 'Server error. Please try again.')
-
 def get_forecast_from_response(response):
     try:
         city = response['city']['name']
@@ -343,17 +324,16 @@ def get_forecast_from_response(response):
 
         for day in days:
             dt = response_day_to_local_time(day[0], tzoffset)
-            daily_temps = []
+            day_temps = []
             for interval in day:
                 temp = int(round(interval['main']['temp']))
                 desc = interval['weather'][0]['description']
-                daily_temps.append((temp, desc))
+                day_temps.append((temp, desc))
 
-            min_temp = min(daily_temps, key=lambda t_d: t_d[0])[0]
-            max_data = max(daily_temps, key=lambda t_d: t_d[0])
-            max_temp = max_data[0]
-            max_desc = max_data[1]
-            reports.append(ForecastWeatherReport(date=dt, min=min_temp, max=max_temp, desc=max_desc))
+            min_temp = min(day_temps, key=lambda t_d: t_d[0])[0]
+            max_temp = max(day_temps, key=lambda t_d: t_d[0])[0]
+            day_desc = Counter(tup[1] for tup in day_temps).most_common(1)[0][0]
+            reports.append(ForecastWeatherReport(date=dt, min=min_temp, max=max_temp, desc=day_desc))
     except ValueError as e:
         sys.stderr.write(f"Exception: {e}" + os.linesep)
         return None, None
@@ -437,13 +417,8 @@ def setting_language_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip().lower()
     if message_text in ['/back', 'en', 'ru']:
-        if message_text == 'en':
-            # TODO extract method
-            language = Language.ENGLISH
-            states[user_id].settings.language = language
-            bot.send_message(user_id, f'Updated. Current language: {language.value}.')
-        elif message_text == 'ru':
-            language = Language.RUSSIAN
+        if message_text != '/back':
+            language = Language.ENGLISH if message_text == 'en' else Language.RUSSIAN
             states[user_id].settings.language = language
             bot.send_message(user_id, f'Updated. Current language: {language.value}.')
         show_settings(user_id)
@@ -457,13 +432,8 @@ def setting_units_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip().lower()
     if message_text in ['/back', 'imperial', 'metric']:
-        if message_text == 'metric':
-            # TODO extract method
-            units = Units.METRIC
-            states[user_id].settings.units = units
-            bot.send_message(user_id, f'Updated. Current units: {units.value}.')
-        elif message_text == 'imperial':
-            units = Units.IMPERIAL
+        if message_text != '/back':
+            units = Units.METRIC if message_text == 'metric' else Units.IMPERIAL
             states[user_id].settings.units = units
             bot.send_message(user_id, f'Updated. Current units: {units.value}.')
         show_settings(user_id)
