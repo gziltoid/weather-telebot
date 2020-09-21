@@ -1,15 +1,15 @@
-from collections import defaultdict, namedtuple, Counter
-from dataclasses import dataclass
-from enum import Enum
-from datetime import datetime, timedelta, tzinfo
-
 import os
 import random
-import requests
 import sys
+from collections import defaultdict, namedtuple, Counter
+from dataclasses import dataclass
+from datetime import datetime, timedelta, tzinfo
+from enum import Enum
+from pprint import pprint
+
+import requests
 import telebot
 from dotenv import load_dotenv, find_dotenv
-from pprint import pprint
 
 load_dotenv(find_dotenv())
 
@@ -102,18 +102,6 @@ main_buttons = ['Current', 'Tomorrow', 'For 4 days', 'Settings']
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
-
-    # markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    # row = [telebot.types.KeyboardButton(name) for name in buttons]
-    # markup.row(*buttons[:2])
-    # markup.row(*buttons[2:])
-    # btn = telebot.types.KeyboardButton('Location', request_location=True)
-    # markup.add(btn)
-    # markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-    # markup.add(telebot.types.InlineKeyboardButton(text='Press me', callback_data='button:2'))
-    # bot.send_message(user_id, 'wow', reply_markup=markup)
-    # markup = telebot.types.ReplyKeyboardRemove(selective=False)
-
     bot.send_message(
         user_id,
         "Hey, I'm the Weather Cat 🐱\nI can show you a weather forecast up to 4 days 🐾\nJust send me one of these "
@@ -122,11 +110,6 @@ def send_welcome(message):
     show_commands(user_id)
     bot.send_message(user_id, '🐈 To start, send a location pin or enter your city:')
     states[user_id].state = State.WELCOME
-
-
-# @bot.message_handler(content_types=['location'])
-# def location_handler(message):
-#     print('Got location:', message.location)
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.WELCOME)
