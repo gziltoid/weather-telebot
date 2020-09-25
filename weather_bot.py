@@ -38,6 +38,7 @@ class State(Enum):
     SETTING_LANGUAGE = 5
     SETTING_UNITS = 6
 
+
 # Dataclasses
 @dataclass
 class Settings:
@@ -47,7 +48,7 @@ class Settings:
 
 
 @dataclass
-class User:
+class UserData:
     state: State
     settings: Settings
 
@@ -56,7 +57,6 @@ LocationData = namedtuple('LocationData', 'city country')
 CurrentWeatherReport = namedtuple('CurrentWeatherReport', 'temp desc')
 TomorrowWeatherReport = namedtuple('TomorrowWeatherReport', 'datetime temp desc')
 ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
-
 
 # Constants
 API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
@@ -90,13 +90,11 @@ BAD_COMMAND_ANSWERS = (
 bot = telebot.TeleBot(TOKEN)
 
 states = defaultdict(
-    lambda: User(
+    lambda: UserData(
         state=State.WELCOME,
         settings=Settings(location='', language=Language.ENGLISH, units=Units.METRIC)
     )
 )
-
-main_buttons = ['Current', 'Tomorrow', 'For 4 days', 'Settings']
 
 
 @bot.message_handler(commands=['start'])
@@ -116,11 +114,11 @@ def send_welcome(message):
 def welcome_handler(message):
     user_id = message.from_user.id
     user_first_name = message.from_user.first_name
+    # TODO location pin
     message_text = message.text.strip().lower()
     if message_text in ['привет', 'hello', 'hi', 'hey']:
         bot.reply_to(message, f'Hi, {user_first_name}.\n🐈 To start, send a location pin or enter your city:')
     elif message_text[0] != '/' and check_if_location_exists(message_text):
-        # TODO location pin
         bot.send_chat_action(user_id, 'typing')
         location = message_text.title()
         states[user_id].settings.location = location
@@ -158,6 +156,7 @@ def reply_to_bad_command(message):
 def main_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip().lower()
+    print(message_text)
     if message_text == '/current':
         get_current_weather(user_id)
         show_commands(user_id)
@@ -167,7 +166,7 @@ def main_handler(message):
     elif message_text == '/forecast':
         get_forecast(user_id)
         show_commands(user_id)
-    elif message_text == '/settings':
+    elif message_text == '/settings' or message_text == 'settings':
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
     else:
@@ -201,6 +200,7 @@ def get_current_weather(user_id):
             return
     bot.send_message(user_id, 'Server error. Please try again.')
 
+
 def get_tomorrow_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
@@ -217,6 +217,7 @@ def get_tomorrow_weather(user_id):
             return
     bot.send_message(user_id, 'Server error. Please try again.')
 
+
 def get_forecast(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
@@ -228,10 +229,12 @@ def get_forecast(user_id):
         if location_data is not None:
             lines = [f'4-day forecast for {location_data.city}, {location_data.country}:']
             for report in reports:
-                lines.append(f"{report.date.strftime('%b %d')}: {report.min}-{report.max}{DEGREE_SIGNS[units]}, {report.desc}")
+                lines.append(
+                    f"{report.date.strftime('%b %d')}: {report.min}-{report.max}{DEGREE_SIGNS[units]}, {report.desc}")
             bot.send_message(user_id, '\n'.join(lines))
             return
     bot.send_message(user_id, 'Server error. Please try again.')
+
 
 def request_forecast(location, language, units):
     querystring = {
@@ -249,6 +252,7 @@ def request_forecast(location, language, units):
         return response.json()
     return None
 
+
 # TODO change OWM API endpoint
 def get_current_weather_from_response(response):
     try:
@@ -261,8 +265,10 @@ def get_current_weather_from_response(response):
         return None, None
     return LocationData(city=city, country=country), CurrentWeatherReport(temp=temp, desc=desc)
 
+
 def response_day_to_local_time(day, tzoffset):
     return datetime.fromtimestamp(int(day['dt']), tz=SimpleTimezone(tzoffset))
+
 
 def get_tomorrow_weather_from_response(response):
     try:
@@ -286,6 +292,7 @@ def get_tomorrow_weather_from_response(response):
         sys.stderr.write(f"Exception: {e}" + os.linesep)
         return None, None
     return LocationData(city=city, country=country), reports
+
 
 def get_forecast_from_response(response):
     try:
@@ -321,6 +328,7 @@ def get_forecast_from_response(response):
         sys.stderr.write(f"Exception: {e}" + os.linesep)
         return None, None
     return LocationData(city=city, country=country), reports
+
 
 def show_settings(user_id):
     location = states[user_id].settings.location
