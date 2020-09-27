@@ -1,6 +1,4 @@
-certifi
 pyTelegramBotAPI
 python-dotenv
 requests
-urllib3
 redis

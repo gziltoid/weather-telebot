@@ -5,11 +5,10 @@ from collections import defaultdict, namedtuple, Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 from enum import Enum
-import jsonpickle
 
+import redis
 import requests
 import telebot
-import redis
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
@@ -25,10 +24,28 @@ class Units(Enum):
     METRIC = 'metric'
     IMPERIAL = 'imperial'
 
+    @classmethod
+    def from_str(cls, label):
+        if label == cls.METRIC.value:
+            return cls.METRIC
+        elif label == cls.IMPERIAL.value:
+            return cls.IMPERIAL
+        else:
+            raise NotImplementedError
+
 
 class Language(Enum):
     ENGLISH = 'en'
     RUSSIAN = 'ru'
+
+    @classmethod
+    def from_str(cls, label):
+        if label == cls.ENGLISH.value:
+            return cls.ENGLISH
+        elif label == cls.RUSSIAN.value:
+            return cls.RUSSIAN
+        else:
+            raise NotImplementedError
 
 
 class State(Enum):
@@ -39,6 +56,13 @@ class State(Enum):
     SETTING_LOCATION = 4
     SETTING_LANGUAGE = 5
     SETTING_UNITS = 6
+
+    @classmethod
+    def from_int(cls, label):
+        if label in range(7):
+            return cls(label)
+        else:
+            raise NotImplementedError
 
 
 # Dataclasses
@@ -62,7 +86,7 @@ ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
 
 # Constants
 API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
-JSON_PATH = 'db/data.json'
+LOCAL_DB_PATH = 'db/data'
 DEGREE_SIGNS = {Units.METRIC: '℃', Units.IMPERIAL: '℉'}
 BAD_COMMAND_ANSWERS = (
     'Sorry, I didn\'t get what you mean.',
@@ -90,6 +114,33 @@ BAD_COMMAND_ANSWERS = (
 )
 
 
+def serialize(states):
+    lines = []
+    for id_, user_data in states.items():
+        state = user_data.state.value
+        location = user_data.settings.location
+        language = user_data.settings.language.value
+        units = user_data.settings.units.value
+        lines.append(f'{id_}|{state}|{location}|{language}|{units}')
+    return '\n'.join(lines)
+
+
+def deserialize(s):
+    states = {}
+    lines = s.splitlines()
+    for line in lines:
+        id_, state, loc, lang, units = line.split('|')
+        states[int(id_)] = UserData(
+            state=State.from_int(int(state)),
+            settings=Settings(
+                location=loc,
+                language=Language.from_str(lang),
+                units=Units.from_str(units)
+            )
+        )
+    return states
+
+
 def get_default_user_data():
     return UserData(state=State.WELCOME,
                     settings=Settings(location='', language=Language.ENGLISH, units=Units.METRIC))
@@ -97,9 +148,8 @@ def get_default_user_data():
 
 def load_db_from_json():
     try:
-        with open(JSON_PATH, encoding='utf-8') as f:
-            data = jsonpickle.decode(f.read())
-            data = defaultdict(lambda: get_default_user_data(), {int(k): v for k, v in data.items()})
+        with open(LOCAL_DB_PATH, encoding='utf-8') as f:
+            data = deserialize(f.read())
     except FileNotFoundError:
         data = defaultdict(lambda: get_default_user_data())
     return data
@@ -111,8 +161,7 @@ def load_db_from_redis():
     if raw_data is None:
         data = defaultdict(lambda: get_default_user_data())
     else:
-        data = jsonpickle.decode(raw_data.decode('utf-8'))
-        data = defaultdict(lambda: get_default_user_data(), {int(k): v for k, v in data.items()})
+        data = deserialize(raw_data.decode('utf-8'))
     return data
 
 
@@ -125,19 +174,18 @@ def load_from_db():
         return load_db_from_redis()
 
 
-# Globals
-bot = telebot.TeleBot(TOKEN)
-states = load_from_db()
-
-
 def save_state():
     if REDIS_URL is not None:
         redis_db = redis.from_url(REDIS_URL)
-        redis_db.set('data', jsonpickle.encode(states))
+        redis_db.set('data', serialize(states))
     else:
-        with open(JSON_PATH, mode='w', encoding='utf-8') as f:
-            jsonpickle.set_encoder_options('json', ensure_ascii=False, indent=2)
-            f.write(jsonpickle.encode(states))
+        with open(LOCAL_DB_PATH, mode='w', encoding='utf-8') as f:
+            f.write(serialize(states))
+
+
+# Globals
+bot = telebot.TeleBot(TOKEN)
+states = load_from_db()
 
 
 @bot.message_handler(commands=['start'])
@@ -158,7 +206,6 @@ def send_welcome(message):
 def welcome_handler(message):
     user_id = message.from_user.id
     user_first_name = message.from_user.first_name
-    # TODO location pin
     message_text = message.text.strip().lower()
     if message_text in ['привет', 'hello', 'hi', 'hey']:
         bot.reply_to(message, f'Hi, {user_first_name}.\n🐈 To start, send a location pin or enter your city:')
@@ -170,7 +217,6 @@ def welcome_handler(message):
         show_commands(user_id)
         states[user_id].state = State.MAIN
         save_state()
-        # TODO switch_to_state(user_id, state, show_message)
     else:
         bot.send_message(user_id, 'Location not found.')
         bot.send_message(user_id, '🐈 To start, send a location pin or enter your city:')
@@ -210,7 +256,7 @@ def main_handler(message):
     elif message_text == '/forecast':
         get_forecast(user_id)
         show_commands(user_id)
-    elif message_text == '/settings' or message_text == 'settings':
+    elif message_text == '/settings':
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
         save_state()
@@ -402,6 +448,7 @@ def settings_handler(message):
         states[user_id].state = State.SETTING_UNITS
         save_state()
     elif message_text == '/back':
+        bot.send_message(user_id, f'Current city: {states[user_id].settings.location}')
         show_commands(user_id)
         states[user_id].state = State.MAIN
         save_state()
@@ -428,13 +475,12 @@ def show_units(user_id):
         user_id,
         f'Current units: {units}.\n/back - back to Settings\nChoose units: 📏 metric | 👑 imperial')
 
-
+# TODO location pin
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.SETTING_LOCATION)
 def setting_location_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip()
     if message_text != '/back':
-        # TODO location pin
         if check_if_location_exists(message_text):
             states[user_id].settings.location = message_text.title()
             location = states[user_id].settings.location
@@ -494,3 +540,19 @@ if __name__ == '__main__':
         sys.stderr.write('Warning: REDIS_URL is not set, using local DB.' + os.linesep)
 
     bot.polling()
+
+
+def test_serialization():
+    data0 = get_default_user_data()
+    data1 = get_default_user_data()
+    data0.settings.location = 'Москва'
+    data0.state = State.FORECAST
+    data0.settings.units = Units.IMPERIAL
+    data1.settings.location = 'San Jose'
+    data1.state = State.MAIN
+    data1.settings.language = Language.RUSSIAN
+
+    states = {123: data0, 456: data1}
+    encoded = serialize(states)
+    decoded = deserialize(encoded)
+    assert (states == decoded)
