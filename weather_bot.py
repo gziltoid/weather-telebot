@@ -5,10 +5,11 @@ from collections import defaultdict, namedtuple, Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 from enum import Enum
-from pprint import pprint
+import jsonpickle
 
 import requests
 import telebot
+import redis
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
@@ -16,6 +17,7 @@ load_dotenv(find_dotenv())
 # Environment variables
 TOKEN = os.getenv('BOT_TOKEN')
 OWM_API_KEY = os.getenv('OWM_API_KEY')
+REDIS_URL = os.getenv('REDIS_URL')
 
 
 # Enums
@@ -60,6 +62,7 @@ ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
 
 # Constants
 API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
+JSON_PATH = 'db/data.json'
 DEGREE_SIGNS = {Units.METRIC: '℃', Units.IMPERIAL: '℉'}
 BAD_COMMAND_ANSWERS = (
     'Sorry, I didn\'t get what you mean.',
@@ -86,15 +89,55 @@ BAD_COMMAND_ANSWERS = (
     'Command not recognized. Please try again.'
 )
 
+
+def get_default_user_data():
+    return UserData(state=State.WELCOME,
+                    settings=Settings(location='', language=Language.ENGLISH, units=Units.METRIC))
+
+
+def load_db_from_json():
+    try:
+        with open(JSON_PATH, encoding='utf-8') as f:
+            data = jsonpickle.decode(f.read())
+            data = defaultdict(lambda: get_default_user_data(), {int(k): v for k, v in data.items()})
+    except FileNotFoundError:
+        data = defaultdict(lambda: get_default_user_data())
+    return data
+
+
+def load_db_from_redis():
+    redis_db = redis.from_url(REDIS_URL)
+    raw_data = redis_db.get('data')
+    if raw_data is None:
+        data = defaultdict(lambda: get_default_user_data())
+    else:
+        data = jsonpickle.decode(raw_data.decode('utf-8'))
+        data = defaultdict(lambda: get_default_user_data(), {int(k): v for k, v in data.items()})
+    return data
+
+
+def load_from_db():
+    if REDIS_URL is None:
+        print('Local DB')
+        return load_db_from_json()
+    else:
+        print('Redis')
+        return load_db_from_redis()
+
+
 # Globals
 bot = telebot.TeleBot(TOKEN)
+states = load_from_db()
 
-states = defaultdict(
-    lambda: UserData(
-        state=State.WELCOME,
-        settings=Settings(location='', language=Language.ENGLISH, units=Units.METRIC)
-    )
-)
+
+def save_state():
+    if REDIS_URL is not None:
+        redis_db = redis.from_url(REDIS_URL)
+        redis_db.set('data', jsonpickle.encode(states))
+    else:
+        with open(JSON_PATH, mode='w', encoding='utf-8') as f:
+            jsonpickle.set_encoder_options('json', ensure_ascii=False, indent=2)
+            f.write(jsonpickle.encode(states))
 
 
 @bot.message_handler(commands=['start'])
@@ -108,6 +151,7 @@ def send_welcome(message):
     show_commands(user_id)
     bot.send_message(user_id, '🐈 To start, send a location pin or enter your city:')
     states[user_id].state = State.WELCOME
+    save_state()
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.WELCOME)
@@ -125,6 +169,7 @@ def welcome_handler(message):
         bot.send_message(user_id, f'Done. Current city: {location}')
         show_commands(user_id)
         states[user_id].state = State.MAIN
+        save_state()
         # TODO switch_to_state(user_id, state, show_message)
     else:
         bot.send_message(user_id, 'Location not found.')
@@ -156,7 +201,6 @@ def reply_to_bad_command(message):
 def main_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip().lower()
-    print(message_text)
     if message_text == '/current':
         get_current_weather(user_id)
         show_commands(user_id)
@@ -169,6 +213,7 @@ def main_handler(message):
     elif message_text == '/settings' or message_text == 'settings':
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
+        save_state()
     else:
         reply_to_bad_command(message)
 
@@ -184,13 +229,12 @@ class SimpleTimezone(tzinfo):
         return timedelta(0)
 
 
-# TODO OWM API module
+# TODO OWM API module, detailed report
 def get_current_weather(user_id):
     bot.send_chat_action(user_id, 'typing')
     settings = states[user_id].settings
     response = request_forecast(settings.location, settings.language.value, settings.units.value)
     if response is not None:
-        pprint(response['list'][0])
         location_data, report = get_current_weather_from_response(response)
         if location_data is not None:
             units = states[user_id].settings.units
@@ -206,7 +250,6 @@ def get_tomorrow_weather(user_id):
     settings = states[user_id].settings
     response = request_forecast(settings.location, settings.language.value, settings.units.value)
     if response is not None:
-        pprint(response['list'][0])
         units = states[user_id].settings.units
         location_data, reports = get_tomorrow_weather_from_response(response)
         if location_data is not None:
@@ -223,7 +266,6 @@ def get_forecast(user_id):
     settings = states[user_id].settings
     response = request_forecast(settings.location, settings.language.value, settings.units.value)
     if response is not None:
-        pprint(response['list'][0])
         units = states[user_id].settings.units
         location_data, reports = get_forecast_from_response(response)
         if location_data is not None:
@@ -350,15 +392,19 @@ def settings_handler(message):
     if message_text == '/location':
         show_location(user_id)
         states[user_id].state = State.SETTING_LOCATION
+        save_state()
     elif message_text == '/language':
         show_language(user_id)
         states[user_id].state = State.SETTING_LANGUAGE
+        save_state()
     elif message_text == '/units':
         show_units(user_id)
         states[user_id].state = State.SETTING_UNITS
+        save_state()
     elif message_text == '/back':
         show_commands(user_id)
         states[user_id].state = State.MAIN
+        save_state()
     else:
         reply_to_bad_command(message)
 
@@ -395,12 +441,14 @@ def setting_location_handler(message):
             bot.send_message(user_id, f'Updated. Current city: {location}')
             show_settings(user_id)
             states[user_id].state = State.SETTINGS
+            save_state()
         else:
             bot.send_message(user_id, 'Location not found.')
             bot.send_message(user_id, 'To start, send a location pin or enter your city:')
     else:
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
+        save_state()
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.SETTING_LANGUAGE)
@@ -414,6 +462,7 @@ def setting_language_handler(message):
             bot.send_message(user_id, f'Updated. Current language: {language.value}.')
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
+        save_state()
     else:
         reply_to_bad_command(message)
 
@@ -429,6 +478,7 @@ def setting_units_handler(message):
             bot.send_message(user_id, f'Updated. Current units: {units.value}.')
         show_settings(user_id)
         states[user_id].state = State.SETTINGS
+        save_state()
     else:
         reply_to_bad_command(message)
 
@@ -440,5 +490,7 @@ if __name__ == '__main__':
     if OWM_API_KEY is None:
         sys.stderr.write('Error: OWM_API_KEY is not set.' + os.linesep)
         sys.exit(1)
+    if REDIS_URL is None:
+        sys.stderr.write('Warning: REDIS_URL is not set, using local DB.' + os.linesep)
 
     bot.polling()
