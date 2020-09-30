@@ -51,10 +51,10 @@ class Command(Enum):
     TOMORROW = '/tomorrow'
     FORECAST = '/forecast'
     SETTINGS = '/settings'
-    LOCATION = '/location'
-    LANGUAGE = '/language'
-    UNITS = '/units'
-    BACK = '/back'
+    # LOCATION = '/location'
+    # LANGUAGE = '/language'
+    # UNITS = '/units'
+    # BACK = '/back'
 
 
 class KeyboardButton(Enum):
@@ -109,13 +109,13 @@ BOT_MAIN_COMMANDS = (
     tt.BotCommand(command='/settings', description='Change your preferences')
 )
 
-BOT_SETTINGS_COMMANDS = (
-    tt.BotCommand(command='/location', description='Change your location'),
-    tt.BotCommand(command='/language', description='Select a forecast language'),
-    tt.BotCommand(command='/units', description='Change your units'),
-    tt.BotCommand(command='/back', description='Back to Weather')
-)
-
-BOT_INLINE_COMMAND = [
-    tt.BotCommand(command='/back', description='Back to Settings')
-]
+# BOT_SETTINGS_COMMANDS = (
+#     tt.BotCommand(command='/location', description='Change your location'),
+#     tt.BotCommand(command='/language', description='Select a forecast language'),
+#     tt.BotCommand(command='/units', description='Change your units'),
+#     tt.BotCommand(command='/back', description='Back to Weather')
+# )
+#
+# BOT_INLINE_COMMAND = [
+#     tt.BotCommand(command='/back', description='Back to Settings')
+# ]
