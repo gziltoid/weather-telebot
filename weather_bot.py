@@ -65,31 +65,28 @@ class State(Enum):
         else:
             raise NotImplementedError
 
+
 class Command(Enum):
     CURRENT = '/current'
     TOMORROW = '/tomorrow'
     FORECAST = '/forecast'
-    SETTINGS = 'settings'
+    SETTINGS = '/settings'
     LOCATION = '/location'
     LANGUAGE = '/language'
     UNITS = '/units'
     BACK = '/back'
 
-    @classmethod
-    def has_value(cls, value):
-        return value in cls._value2member_map_
 
-
-class KeyboardReply(Enum):
+class KeyboardButton(Enum):
     CURRENT = '⛅ Current'
     TOMORROW = '➡️️️ Tomorrow'
     FORECAST = '📆 For 4 days'
     SETTINGS = '☑️️ Settings'
     LOCATION = '🌎 Change location'
     LANGUAGE = '🔤️ Change language'
+    UNITS = '📐 Change units'
     ENGLISH = '🇺🇸 English'
     RUSSIAN = '🇷🇺 Русский'
-    UNITS = '📐 Change units'
     METRIC = '📏 Metric'
     IMPERIAL = '👑 Imperial'
     BACK = '↩️ Back'
@@ -145,6 +142,54 @@ BAD_COMMAND_ANSWERS = (
     'Bad command. Please try again.',
     'Command not recognized. Please try again.'
 )
+
+MAIN_KEYBOARD = (
+    KeyboardButton.CURRENT,
+    KeyboardButton.TOMORROW,
+    KeyboardButton.FORECAST,
+    KeyboardButton.SETTINGS
+)
+
+SETTINGS_KEYBOARD = (
+    KeyboardButton.LOCATION,
+    KeyboardButton.LANGUAGE,
+    KeyboardButton.UNITS,
+    KeyboardButton.BACK
+)
+
+SETTING_LOCATION_KEYBOARD = (
+    KeyboardButton.BACK
+)
+
+SETTING_LANGUAGE_KEYBOARD = (
+    KeyboardButton.ENGLISH,
+    KeyboardButton.RUSSIAN,
+    KeyboardButton.BACK
+)
+
+SETTING_UNITS_KEYBOARD = (
+    KeyboardButton.METRIC,
+    KeyboardButton.IMPERIAL,
+    KeyboardButton.BACK
+)
+
+BOT_MAIN_COMMANDS = (
+    types.BotCommand(command='/current', description='Get the current weather'),
+    types.BotCommand(command='/tomorrow', description='Get a forecast for tomorrow'),
+    types.BotCommand(command='/forecast', description='Get a 4-day forecast'),
+    types.BotCommand(command='/settings', description='Change your preferences')
+)
+
+BOT_SETTINGS_COMMANDS = (
+    types.BotCommand(command='/location', description='Change your location'),
+    types.BotCommand(command='/language', description='Select a forecast language'),
+    types.BotCommand(command='/units', description='Change your units'),
+    types.BotCommand(command='/back', description='Back to Weather')
+)
+
+BOT_INLINE_COMMAND = [
+    types.BotCommand(command='/back', description='Back to Settings')
+]
 
 
 def serialize(states):
@@ -220,54 +265,118 @@ def save_state():
 bot = telebot.TeleBot(TOKEN)
 states = load_from_db()
 
+
 def remove_keyboard():
     return types.ReplyKeyboardRemove(selective=False)
 
+
 def get_main_keyboard():
-    # FIXME const buttons
-    main_buttons = [item.value for item in (KeyboardReply.CURRENT, KeyboardReply.TOMORROW, KeyboardReply.FORECAST, KeyboardReply.SETTINGS)]
+    main_buttons = [item.value for item in MAIN_KEYBOARD]
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(*main_buttons)
     return markup
 
+
 def get_settings_keyboard():
-    # FIXME const buttons
-    settings_buttons = [item.value for item in (KeyboardReply.LOCATION, KeyboardReply.LANGUAGE, KeyboardReply.UNITS, KeyboardReply.BACK)]
+    settings_buttons = [item.value for item in SETTINGS_KEYBOARD]
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     markup.add(settings_buttons[0])
     markup.row(*settings_buttons[1:3])
     markup.add(settings_buttons[3])
     return markup
 
+
 def get_select_location_keyboard():
-    # FIXME const buttons
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(text=KeyboardReply.BACK.value, callback_data=KeyboardReply.BACK.value))
+    markup.add(
+        types.InlineKeyboardButton(text=SETTING_LOCATION_KEYBOARD.value, callback_data=SETTING_LOCATION_KEYBOARD.value)
+    )
     return markup
+
 
 def get_select_language_keyboard():
-    # FIXME const buttons
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.row(
-        types.InlineKeyboardButton(text=KeyboardReply.ENGLISH.value, callback_data=KeyboardReply.ENGLISH.value),
-        types.InlineKeyboardButton(text=KeyboardReply.RUSSIAN.value, callback_data=KeyboardReply.RUSSIAN.value)
-    )
-    markup.add(types.InlineKeyboardButton(text=KeyboardReply.BACK.value, callback_data=KeyboardReply.BACK.value))
+    buttons = [
+        types.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_LANGUAGE_KEYBOARD
+    ]
+    markup.add(*buttons)
     return markup
+
 
 def get_select_units_keyboard():
-    # FIXME const buttons
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.row(
-        types.InlineKeyboardButton(text=KeyboardReply.METRIC.value, callback_data=KeyboardReply.METRIC.value),
-        types.InlineKeyboardButton(text=KeyboardReply.IMPERIAL.value, callback_data=KeyboardReply.IMPERIAL.value)
-    )
-    markup.add(types.InlineKeyboardButton(text=KeyboardReply.BACK.value, callback_data=KeyboardReply.BACK.value))
+    buttons = [
+        types.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_UNITS_KEYBOARD
+    ]
+    markup.add(*buttons)
     return markup
 
+
+@bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_LOCATION)
+def setting_location_callback_handler(call):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    set_bot_commands(BOT_SETTINGS_COMMANDS)
+    states[user_id].state = State.SETTINGS
+    save_state()
+    bot.delete_message(user_id, message_id)
+    show_current_settings(user_id)
+    show_settings_keyboard(user_id)
+
+
+@bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_LANGUAGE)
+def setting_language_callback_handler(call):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    if call.data != KeyboardButton.BACK.value:
+        set_bot_commands(BOT_SETTINGS_COMMANDS)
+        language = Language.ENGLISH if call.data == KeyboardButton.ENGLISH.value else Language.RUSSIAN
+        states[user_id].settings.language = language
+        bot.edit_message_text(
+            chat_id=user_id,
+            message_id=message_id,
+            text=f'✔️ Updated. Current language: {LANGUAGE_SIGNS[language]} {language.value.title()}.',
+            reply_markup=None
+        )
+        bot.answer_callback_query(call.id, show_alert=False, text='Updated.')
+    else:
+        bot.delete_message(user_id, message_id)
+    set_bot_commands(BOT_SETTINGS_COMMANDS)
+    states[user_id].state = State.SETTINGS
+    save_state()
+    show_current_settings(user_id)
+    show_settings_keyboard(user_id)
+
+
+@bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_UNITS)
+def setting_units_callback_handler(call):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    if call.data != KeyboardButton.BACK.value:
+        set_bot_commands(BOT_SETTINGS_COMMANDS)
+        units = Units.METRIC if call.data == KeyboardButton.METRIC.value else Units.IMPERIAL
+        states[user_id].settings.units = units
+        bot.edit_message_text(
+            chat_id=user_id,
+            message_id=message_id,
+            text=f'✔️ Updated. Current units: {UNITS_SIGNS[units]} {units.value}.',
+            reply_markup=None
+        )
+        bot.answer_callback_query(call.id, show_alert=False, text='Updated.')
+    else:
+        bot.delete_message(user_id, message_id)
+    set_bot_commands(BOT_SETTINGS_COMMANDS)
+    states[user_id].state = State.SETTINGS
+    save_state()
+    show_current_settings(user_id)
+    show_settings_keyboard(user_id)
+
+def set_bot_commands(commands=()):
+    bot.set_my_commands(commands)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    set_bot_commands()
     user_id = message.from_user.id
     bot.send_message(
         user_id,
@@ -291,11 +400,15 @@ def welcome_handler(message):
         location = message_text.title()
         states[user_id].settings.location = location
         bot.send_message(user_id, f'👌 Done. Current city: {location}')
+        set_bot_commands(BOT_MAIN_COMMANDS)
         show_main_keyboard(user_id)
         states[user_id].state = State.MAIN
         save_state()
     else:
-        bot.send_message(user_id, '⚠️ Location not found.\n\n🐈 To start, enter your city:')
+        bot.send_message(
+            user_id,
+            '⚠️ Location not found.\n\n🐈 To start, enter your city:'
+        )
 
 
 def check_if_location_exists(location):
@@ -318,16 +431,19 @@ def reply_to_bad_command(message):
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.MAIN)
 def main_handler(message):
+    set_bot_commands(BOT_MAIN_COMMANDS)
     user_id = message.from_user.id
     message_text = message.text.strip()
-    if message_text in (Command.CURRENT, KeyboardReply.CURRENT.value):
+    if message_text in (Command.CURRENT.value, KeyboardButton.CURRENT.value):
         get_current_weather(user_id)
-    elif message_text in (Command.TOMORROW, KeyboardReply.TOMORROW.value):
+    elif message_text in (Command.TOMORROW.value, KeyboardButton.TOMORROW.value):
         get_tomorrow_weather(user_id)
-    elif message_text in (Command.FORECAST, KeyboardReply.FORECAST.value):
+    elif message_text in (Command.FORECAST.value, KeyboardButton.FORECAST.value):
         get_forecast(user_id)
-    elif message_text in (Command.SETTINGS, KeyboardReply.SETTINGS.value):
-        show_settings_and_keyboard(user_id)
+    elif message_text in (Command.SETTINGS.value, KeyboardButton.SETTINGS.value):
+        set_bot_commands(BOT_SETTINGS_COMMANDS)
+        show_current_settings(user_id)
+        show_settings_keyboard(user_id)
         states[user_id].state = State.SETTINGS
         save_state()
     else:
@@ -371,7 +487,8 @@ def get_tomorrow_weather(user_id):
         if location_data is not None:
             lines = [f"<u>{reports[0].datetime.strftime('%B %d')} - {location_data.city}, {location_data.country}:</u>"]
             for report in reports:
-                lines.append(f"<i><b>{report.datetime.strftime('%H:%M')}</b>: {report.temp}{DEGREE_SIGNS[units]}, {report.desc}</i>")
+                lines.append(
+                    f"<i><b>{report.datetime.strftime('%H:%M')}</b>: {report.temp}{DEGREE_SIGNS[units]}, {report.desc}</i>")
             bot.send_message(user_id, '\n'.join(lines), parse_mode='HTML')
             return
     bot.send_message(user_id, '⁉️ Server error. Please try again.')
@@ -488,13 +605,20 @@ def get_forecast_from_response(response):
     return LocationData(city=city, country=country), reports
 
 
-def show_settings_and_keyboard(user_id):
+def show_current_settings(user_id):
     location = states[user_id].settings.location
     language = states[user_id].settings.language
     units = states[user_id].settings.units
     bot.send_message(
         user_id,
         f'Current: 📍 {location} | {LANGUAGE_SIGNS[language]} {language.value.title()} | {UNITS_SIGNS[units]} {units.value}',
+    )
+
+
+def show_settings_keyboard(user_id):
+    bot.send_message(
+        user_id,
+        f'Choose your preferences: ',
         reply_markup=get_settings_keyboard()
     )
 
@@ -503,22 +627,25 @@ def show_settings_and_keyboard(user_id):
 def settings_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip()
-    if message_text in (Command.LOCATION.value, KeyboardReply.LOCATION.value):
+    if message_text in (Command.LOCATION.value, KeyboardButton.LOCATION.value):
+        set_bot_commands(BOT_INLINE_COMMAND)
         show_location_and_keyboard(user_id)
         states[user_id].state = State.SETTING_LOCATION
         save_state()
-    elif message_text in (Command.LANGUAGE.value, KeyboardReply.LANGUAGE.value):
+    elif message_text in (Command.LANGUAGE.value, KeyboardButton.LANGUAGE.value):
+        set_bot_commands(BOT_INLINE_COMMAND)
         show_language_and_keyboard(user_id)
         states[user_id].state = State.SETTING_LANGUAGE
         save_state()
-    elif message_text in (Command.UNITS.value, KeyboardReply.UNITS.value):
+    elif message_text in (Command.UNITS.value, KeyboardButton.UNITS.value):
+        set_bot_commands(BOT_INLINE_COMMAND)
         show_units_and_keyboard(user_id)
         states[user_id].state = State.SETTING_UNITS
         save_state()
-    elif message_text in (Command.BACK.value, KeyboardReply.BACK.value):
+    elif message_text in (Command.BACK.value, KeyboardButton.BACK.value):
+        set_bot_commands(BOT_MAIN_COMMANDS)
         show_current_city(user_id)
         show_main_keyboard(user_id)
-        # TODO switch_to_state(user_id, to_state)
         states[user_id].state = State.MAIN
         save_state()
     else:
@@ -541,7 +668,7 @@ def show_language_and_keyboard(user_id):
     language = states[user_id].settings.language
     bot.send_message(
         user_id,
-        f'Current forecast language: {LANGUAGE_SIGNS[language]} {language.value.title()}.\n\nChoose a forecast language:',
+        f'Current: {LANGUAGE_SIGNS[language]} {language.value.title()}.\n\nChoose a forecast language:',
         reply_markup=get_select_language_keyboard()
     )
 
@@ -550,60 +677,45 @@ def show_units_and_keyboard(user_id):
     units = states[user_id].settings.units
     bot.send_message(
         user_id,
-        f'Current units: {UNITS_SIGNS[units]} {units.value}.\n\nChoose units:',
+        f'Current: {UNITS_SIGNS[units]} {units.value}.\n\nChoose units:',
         reply_markup=get_select_units_keyboard()
     )
 
 
-# TODO location pin
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.SETTING_LOCATION)
 def setting_location_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip()
-    if message_text not in (Command.BACK.value, KeyboardReply.BACK.value):
+    if message_text != Command.BACK.value:
         if check_if_location_exists(message_text):
             states[user_id].settings.location = message_text.title()
             location = states[user_id].settings.location
             bot.send_message(user_id, f'✔️ Updated. Current city: {location}')
-            show_settings_and_keyboard(user_id)
-            states[user_id].state = State.SETTINGS
-            save_state()
         else:
-            bot.send_message(user_id, '⚠️ Location not found.\n\n🐈 To start, enter your city:')
-    else:
-        show_settings_and_keyboard(user_id)
-        states[user_id].state = State.SETTINGS
-        save_state()
+            bot.delete_message(user_id, message.message_id - 1)
+            bot.send_message(
+                user_id,
+                '⚠️ Location not found.\n\n🐈 To start, enter your city:',
+                reply_markup=get_select_location_keyboard()
+            )
+            return
+    set_bot_commands(BOT_SETTINGS_COMMANDS)
+    states[user_id].state = State.SETTINGS
+    save_state()
+    show_current_settings(user_id)
+    show_settings_keyboard(user_id)
 
 
-@bot.message_handler(func=lambda message: states[message.from_user.id].state == State.SETTING_LANGUAGE)
-def setting_language_handler(message):
+@bot.message_handler(func=lambda message: states[message.from_user.id].state in (State.SETTING_LANGUAGE, State.SETTING_UNITS))
+def setting_language_and_units_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip()
-    if message_text in (Command.BACK.value, KeyboardReply.BACK.value, KeyboardReply.ENGLISH.value, KeyboardReply.RUSSIAN.value):
-        if message_text not in (Command.BACK.value, KeyboardReply.BACK.value):
-            language = Language.ENGLISH if message_text == KeyboardReply.ENGLISH.value else Language.RUSSIAN
-            states[user_id].settings.language = language
-            bot.send_message(user_id, f'✔️ Updated. Current language: {LANGUAGE_SIGNS[language]} {language.value.title()}.')
-        show_settings_and_keyboard(user_id)
+    if message_text == Command.BACK.value:
+        set_bot_commands(BOT_SETTINGS_COMMANDS)
         states[user_id].state = State.SETTINGS
         save_state()
-    else:
-        reply_to_bad_command(message)
-
-
-@bot.message_handler(func=lambda message: states[message.from_user.id].state == State.SETTING_UNITS)
-def setting_units_handler(message):
-    user_id = message.from_user.id
-    message_text = message.text.strip()
-    if message_text in (Command.BACK.value, KeyboardReply.BACK.value, KeyboardReply.IMPERIAL.value, KeyboardReply.METRIC.value):
-        if message_text not in (Command.BACK.value, KeyboardReply.BACK.value):
-            units = Units.METRIC if message_text == KeyboardReply.METRIC.value else Units.IMPERIAL
-            states[user_id].settings.units = units
-            bot.send_message(user_id, f'✔️ Updated. Current units: {UNITS_SIGNS[units]} {units.value}.')
-        show_settings_and_keyboard(user_id)
-        states[user_id].state = State.SETTINGS
-        save_state()
+        show_current_settings(user_id)
+        show_settings_keyboard(user_id)
     else:
         reply_to_bad_command(message)
 
