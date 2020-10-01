@@ -2,9 +2,11 @@ import random
 
 from telebot import types as tt
 
+import handlers
 from api import *
 from consts import *
-import handlers
+from db import save_state
+from state import State
 
 
 def remove_reply_keyboard():
@@ -12,46 +14,38 @@ def remove_reply_keyboard():
 
 
 def get_main_keyboard():
-    main_buttons = [item.value for item in MAIN_KEYBOARD]
+    buttons = [item.value for item in MAIN_KEYBOARD]
     markup = tt.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(*main_buttons)
+    markup.add(*buttons)
     return markup
 
 
 def get_settings_keyboard():
-    settings_buttons = [item.value for item in SETTINGS_KEYBOARD]
+    buttons = [item.value for item in SETTINGS_KEYBOARD]
     markup = tt.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
-    markup.add(settings_buttons[0])
-    markup.row(*settings_buttons[1:3])
-    markup.add(settings_buttons[3])
+    markup.add(buttons[0])
+    markup.row(*buttons[1:3])
+    markup.add(buttons[3])
     return markup
 
 
 def get_select_location_keyboard():
     markup = tt.InlineKeyboardMarkup()
-    markup.add(
-        tt.InlineKeyboardButton(
-            text=SETTING_LOCATION_KEYBOARD.value,
-            callback_data=SETTING_LOCATION_KEYBOARD.value
-        )
-    )
+    buttons = [tt.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_LOCATION_KEYBOARD]
+    markup.add(*buttons)
     return markup
 
 
 def get_select_language_keyboard():
     markup = tt.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        tt.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_LANGUAGE_KEYBOARD
-    ]
+    buttons = [tt.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_LANGUAGE_KEYBOARD]
     markup.add(*buttons)
     return markup
 
 
 def get_select_units_keyboard():
     markup = tt.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        tt.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_UNITS_KEYBOARD
-    ]
+    buttons = [tt.InlineKeyboardButton(text=btn.value, callback_data=btn.value) for btn in SETTING_UNITS_KEYBOARD]
     markup.add(*buttons)
     return markup
 
@@ -60,9 +54,29 @@ def set_bot_commands(commands=()):
     handlers.bot.set_my_commands(commands)
 
 
+def switch_to_state(user_id, state):
+    handlers.states[user_id].state = state
+    save_state(handlers.states)
+    if state == State.SETTINGS:
+        show_settings_keyboard(user_id)
+    elif state == State.MAIN:
+        show_main_keyboard(user_id)
+    elif state == State.SETTING_LOCATION:
+        show_select_location_keyboard(user_id)
+    elif state == State.SETTING_LANGUAGE:
+        show_select_language_keyboard(user_id)
+    elif state == State.SETTING_UNITS:
+        show_select_units_keyboard(user_id)
+
+
 def show_main_keyboard(user_id):
     set_bot_commands(BOT_MAIN_COMMANDS)
-    handlers.bot.send_message(user_id, 'Choose one:', reply_markup=get_main_keyboard())
+    handlers.bot.send_message(
+        user_id,
+        'Choose one:',
+        disable_notification=True,
+        reply_markup=get_main_keyboard()
+    )
 
 
 def show_current_settings(user_id):
@@ -80,38 +94,49 @@ def show_settings_keyboard(user_id):
     set_bot_commands()
     handlers.bot.send_message(
         user_id,
-        f'Choose your preferences: ',
+        'Choose your preferences:',
+        disable_notification=True,
         reply_markup=get_settings_keyboard()
     )
 
 
-def show_current_city(user_id):
-    handlers.bot.send_message(user_id, f'📍 Current city: {handlers.states[user_id].settings.location}')
+def show_current_location(user_id):
+    handlers.bot.send_message(user_id, f'📍 Current location: {handlers.states[user_id].settings.location}')
 
 
-# FIXME split
-def show_location_and_keyboard(user_id):
+def show_current_language(user_id):
+    language = handlers.states[user_id].settings.language
+    handlers.bot.send_message(user_id, f'Current language: {LANGUAGE_SIGNS[language]} {language.value.title()}')
+
+
+def show_current_units(user_id):
+    units = handlers.states[user_id].settings.units
+    handlers.bot.send_message(user_id, f'Current units: {UNITS_SIGNS[units]} {units.value}')
+
+
+def show_select_location_keyboard(user_id):
     handlers.bot.send_message(
         user_id,
-        f'📍 Current location: {handlers.states[user_id].settings.location}.\n\n🐈 Enter your city:',
+        '🐈 Enter your location:',
+        disable_notification=True,
         reply_markup=get_select_location_keyboard()
     )
 
 
-def show_language_and_keyboard(user_id):
-    language = handlers.states[user_id].settings.language
+def show_select_language_keyboard(user_id):
     handlers.bot.send_message(
         user_id,
-        f'Current: {LANGUAGE_SIGNS[language]} {language.value.title()}.\n\nChoose a forecast language:',
+        'Choose a forecast language:',
+        disable_notification=True,
         reply_markup=get_select_language_keyboard()
     )
 
 
-def show_units_and_keyboard(user_id):
-    units = handlers.states[user_id].settings.units
+def show_select_units_keyboard(user_id):
     handlers.bot.send_message(
         user_id,
-        f'Current: {UNITS_SIGNS[units]} {units.value}.\n\nChoose units:',
+        'Choose units:',
+        disable_notification=True,
         reply_markup=get_select_units_keyboard()
     )
 
@@ -120,11 +145,10 @@ def reply_to_bad_command(message):
     handlers.bot.reply_to(message, random.choice(BAD_COMMAND_ANSWERS))
 
 
-# TODO OWM API module, detailed report
 def get_current_weather(user_id):
     handlers.bot.send_chat_action(user_id, 'typing')
     settings = handlers.states[user_id].settings
-    response = request_forecast(settings.location, settings.language.value, settings.units.value)
+    response = request_forecast(settings.location, settings.language, settings.units)
     if response is not None:
         location_data, report = get_current_weather_from_response(response)
         if location_data is not None:
@@ -139,7 +163,7 @@ def get_current_weather(user_id):
 def get_tomorrow_weather(user_id):
     handlers.bot.send_chat_action(user_id, 'typing')
     settings = handlers.states[user_id].settings
-    response = request_forecast(settings.location, settings.language.value, settings.units.value)
+    response = request_forecast(settings.location, settings.language, settings.units)
     if response is not None:
         units = handlers.states[user_id].settings.units
         location_data, reports = get_tomorrow_weather_from_response(response)
@@ -157,7 +181,7 @@ def get_tomorrow_weather(user_id):
 def get_forecast(user_id):
     handlers.bot.send_chat_action(user_id, 'typing')
     settings = handlers.states[user_id].settings
-    response = request_forecast(settings.location, settings.language.value, settings.units.value)
+    response = request_forecast(settings.location, settings.language, settings.units)
     if response is not None:
         units = handlers.states[user_id].settings.units
         location_data, reports = get_forecast_from_response(response)

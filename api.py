@@ -33,8 +33,8 @@ def check_if_location_exists(location):
 def request_forecast(location, language, units):
     querystring = {
         'q': location,
-        'lang': language[:2],
-        'units': units,
+        'lang': language.short_name(),
+        'units': units.value,
         'appid': OWM_API_KEY,
     }
     try:

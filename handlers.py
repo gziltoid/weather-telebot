@@ -9,17 +9,15 @@ states = load_from_db()
 
 
 def start_polling():
-    bot.polling()
+    bot.polling(none_stop=True)
 
 
 @bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_LOCATION)
 def setting_location_callback_handler(call):
     user_id = call.from_user.id
     message_id = call.message.message_id
-    states[user_id].state = State.SETTINGS
-    save_state(states)
     bot.delete_message(user_id, message_id)
-    show_settings_keyboard(user_id)
+    switch_to_state(user_id, State.SETTINGS)
 
 
 @bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_LANGUAGE)
@@ -39,9 +37,7 @@ def setting_language_callback_handler(call):
         show_current_settings(user_id)
     else:
         bot.delete_message(user_id, message_id)
-    states[user_id].state = State.SETTINGS
-    save_state(states)
-    show_settings_keyboard(user_id)
+    switch_to_state(user_id, State.SETTINGS)
 
 
 @bot.callback_query_handler(func=lambda call: states[call.from_user.id].state == State.SETTING_UNITS)
@@ -61,9 +57,7 @@ def setting_units_callback_handler(call):
         show_current_settings(user_id)
     else:
         bot.delete_message(user_id, message_id)
-    states[user_id].state = State.SETTINGS
-    save_state(states)
-    show_settings_keyboard(user_id)
+    switch_to_state(user_id, State.SETTINGS)
 
 
 @bot.message_handler(commands=['start'])
@@ -76,8 +70,7 @@ def send_welcome(message):
         reply_markup=remove_reply_keyboard()
     )
     bot.send_message(user_id, '🐈 To start, enter your city:')
-    states[user_id].state = State.WELCOME
-    save_state(states)
+    switch_to_state(user_id, State.WELCOME)
 
 
 @bot.message_handler(func=lambda message: states[message.from_user.id].state == State.WELCOME)
@@ -92,9 +85,7 @@ def welcome_handler(message):
         location = message_text.title()
         states[user_id].settings.location = location
         bot.send_message(user_id, f'👌 Done. Current city: {location}')
-        states[user_id].state = State.MAIN
-        save_state(states)
-        show_main_keyboard(user_id)
+        switch_to_state(user_id, State.MAIN)
     else:
         bot.send_message(
             user_id,
@@ -114,9 +105,7 @@ def main_handler(message):
         get_forecast(user_id)
     elif message_text in (Command.SETTINGS.value, KeyboardButton.SETTINGS.value):
         show_current_settings(user_id)
-        show_settings_keyboard(user_id)
-        states[user_id].state = State.SETTINGS
-        save_state(states)
+        switch_to_state(user_id, State.SETTINGS)
     else:
         reply_to_bad_command(message)
 
@@ -126,22 +115,17 @@ def settings_handler(message):
     user_id = message.from_user.id
     message_text = message.text.strip()
     if message_text == KeyboardButton.LOCATION.value:
-        show_location_and_keyboard(user_id)
-        states[user_id].state = State.SETTING_LOCATION
-        save_state(states)
+        show_current_location(user_id)
+        switch_to_state(user_id, State.SETTING_LOCATION)
     elif message_text == KeyboardButton.LANGUAGE.value:
-        show_language_and_keyboard(user_id)
-        states[user_id].state = State.SETTING_LANGUAGE
-        save_state(states)
+        show_current_language(user_id)
+        switch_to_state(user_id, State.SETTING_LANGUAGE)
     elif message_text == KeyboardButton.UNITS.value:
-        show_units_and_keyboard(user_id)
-        states[user_id].state = State.SETTING_UNITS
-        save_state(states)
+        show_current_units(user_id)
+        switch_to_state(user_id, State.SETTING_UNITS)
     elif message_text == KeyboardButton.BACK.value:
-        show_current_city(user_id)
-        show_main_keyboard(user_id)
-        states[user_id].state = State.MAIN
-        save_state(states)
+        show_current_location(user_id)
+        switch_to_state(user_id, State.MAIN)
     else:
         reply_to_bad_command(message)
 
@@ -160,12 +144,11 @@ def setting_location_handler(message):
         bot.send_message(
             user_id,
             '⚠️ Location not found.\n\n🐈 Enter your city:',
+            disable_notification=True,
             reply_markup=get_select_location_keyboard()
         )
         return
-    states[user_id].state = State.SETTINGS
-    save_state(states)
-    show_settings_keyboard(user_id)
+    switch_to_state(user_id, State.SETTINGS)
 
 
 @bot.message_handler(func=lambda msg: states[msg.from_user.id].state in (State.SETTING_LANGUAGE, State.SETTING_UNITS))

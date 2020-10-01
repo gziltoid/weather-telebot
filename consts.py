@@ -82,7 +82,7 @@ SETTINGS_KEYBOARD = (
 )
 
 SETTING_LOCATION_KEYBOARD = (
-    KeyboardButton.BACK
+    KeyboardButton.BACK,  # comma to make this a 1-element tuple
 )
 
 SETTING_LANGUAGE_KEYBOARD = (
@@ -98,8 +98,8 @@ SETTING_UNITS_KEYBOARD = (
 )
 
 BOT_MAIN_COMMANDS = (
-    tt.BotCommand(command='/current', description='Get the current weather'),
-    tt.BotCommand(command='/tomorrow', description='Get a forecast for tomorrow'),
-    tt.BotCommand(command='/forecast', description='Get a 4-day forecast'),
-    tt.BotCommand(command='/settings', description='Change your preferences')
+    tt.BotCommand(command=Command.CURRENT.value, description='Get the current weather'),
+    tt.BotCommand(command=Command.TOMORROW.value, description='Get a forecast for tomorrow'),
+    tt.BotCommand(command=Command.FORECAST.value, description='Get a 4-day forecast'),
+    tt.BotCommand(command=Command.SETTINGS.value, description='Change your preferences')
 )

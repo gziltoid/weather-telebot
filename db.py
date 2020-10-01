@@ -9,20 +9,17 @@ from state import get_default_user_data, serialize, deserialize
 def load_from_local_db():
     try:
         with open(LOCAL_DB_PATH, encoding='utf-8') as f:
-            data = defaultdict(lambda: get_default_user_data(), deserialize(f.read()))
+            data = deserialize(f.read())
     except FileNotFoundError:
-        data = defaultdict(lambda: get_default_user_data())
-    return data
+        data = {}
+    return defaultdict(lambda: get_default_user_data(), data)
 
 
 def load_db_from_redis():
     redis_db = redis.from_url(REDIS_URL)
     raw_data = redis_db.get('data')
-    if raw_data is None:
-        data = defaultdict(lambda: get_default_user_data())
-    else:
-        data = defaultdict(lambda: get_default_user_data(), deserialize(raw_data.decode('utf-8')))
-    return data
+    data = deserialize(raw_data.decode('utf-8')) if raw_data is not None else {}
+    return defaultdict(lambda: get_default_user_data(), data)
 
 
 def load_from_db():

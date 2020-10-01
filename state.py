@@ -30,15 +30,17 @@ class Language(Enum):
         else:
             raise NotImplementedError
 
+    def short_name(self):
+        return self.value[:2]
+
 
 class State(Enum):
     MAIN = 0
     WELCOME = 1
-    FORECAST = 2
-    SETTINGS = 3
-    SETTING_LOCATION = 4
-    SETTING_LANGUAGE = 5
-    SETTING_UNITS = 6
+    SETTINGS = 2
+    SETTING_LOCATION = 3
+    SETTING_LANGUAGE = 4
+    SETTING_UNITS = 5
 
     @classmethod
     def from_int(cls, label):
@@ -48,7 +50,6 @@ class State(Enum):
             raise NotImplementedError
 
 
-# Dataclasses
 @dataclass
 class Settings:
     location: str
