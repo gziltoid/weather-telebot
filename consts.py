@@ -13,7 +13,6 @@ TOKEN = os.getenv('BOT_TOKEN')
 OWM_API_KEY = os.getenv('OWM_API_KEY')
 REDIS_URL = os.getenv('REDIS_URL')
 
-# Constants
 API_URL = 'https://api.openweathermap.org/data/2.5/forecast'
 LOCAL_DB_PATH = 'db/data'
 
@@ -51,10 +50,6 @@ class Command(Enum):
     TOMORROW = '/tomorrow'
     FORECAST = '/forecast'
     SETTINGS = '/settings'
-    # LOCATION = '/location'
-    # LANGUAGE = '/language'
-    # UNITS = '/units'
-    # BACK = '/back'
 
 
 class KeyboardButton(Enum):
@@ -108,14 +103,3 @@ BOT_MAIN_COMMANDS = (
     tt.BotCommand(command='/forecast', description='Get a 4-day forecast'),
     tt.BotCommand(command='/settings', description='Change your preferences')
 )
-
-# BOT_SETTINGS_COMMANDS = (
-#     tt.BotCommand(command='/location', description='Change your location'),
-#     tt.BotCommand(command='/language', description='Select a forecast language'),
-#     tt.BotCommand(command='/units', description='Change your units'),
-#     tt.BotCommand(command='/back', description='Back to Weather')
-# )
-#
-# BOT_INLINE_COMMAND = [
-#     tt.BotCommand(command='/back', description='Back to Settings')
-# ]

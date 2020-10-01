@@ -19,6 +19,7 @@ class SimpleTimezone(tzinfo):
     def dst(self, dt):
         return timedelta(0)
 
+
 def check_if_location_exists(location):
     try:
         querystring = {'q': location, 'appid': OWM_API_KEY}
@@ -27,6 +28,7 @@ def check_if_location_exists(location):
         sys.stderr.write(f"Exception: {e}" + os.linesep)
     else:
         return response.status_code == 200
+
 
 def request_forecast(location, language, units):
     querystring = {

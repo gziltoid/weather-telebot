@@ -3,7 +3,6 @@ from collections import defaultdict
 import redis
 
 from consts import LOCAL_DB_PATH, REDIS_URL
-import handlers
 from state import get_default_user_data, serialize, deserialize
 
 
@@ -35,10 +34,10 @@ def load_from_db():
         return load_db_from_redis()
 
 
-def save_state():
+def save_state(states):
     if REDIS_URL is not None:
         redis_db = redis.from_url(REDIS_URL)
-        redis_db.set('data', serialize(handlers.states))
+        redis_db.set('data', serialize(states))
     else:
         with open(LOCAL_DB_PATH, mode='w', encoding='utf-8') as f:
-            f.write(serialize(handlers.states))
+            f.write(serialize(states))

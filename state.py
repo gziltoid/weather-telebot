@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-# Enums
 class Units(Enum):
     METRIC = 'metric'
     IMPERIAL = 'imperial'
@@ -63,12 +62,6 @@ class UserData:
     settings: Settings
 
 
-LocationData = namedtuple('LocationData', 'city country')
-CurrentWeatherReport = namedtuple('CurrentWeatherReport', 'temp desc')
-TomorrowWeatherReport = namedtuple('TomorrowWeatherReport', 'datetime temp desc')
-ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
-
-
 def get_default_user_data():
     return UserData(
         state=State.WELCOME,
@@ -77,6 +70,13 @@ def get_default_user_data():
             language=Language.ENGLISH,
             units=Units.METRIC)
     )
+
+
+LocationData = namedtuple('LocationData', 'city country')
+CurrentWeatherReport = namedtuple('CurrentWeatherReport', 'temp desc')
+TomorrowWeatherReport = namedtuple('TomorrowWeatherReport', 'datetime temp desc')
+ForecastWeatherReport = namedtuple('ForecastWeatherReport', 'date min max desc')
+
 
 def serialize(states):
     lines = []
@@ -104,6 +104,7 @@ def deserialize(s):
         )
     return states
 
+
 def test_serialization():
     data0 = get_default_user_data()
     data1 = get_default_user_data()
@@ -118,4 +119,3 @@ def test_serialization():
     encoded = serialize(states)
     decoded = deserialize(encoded)
     assert (states == decoded)
-

@@ -2,7 +2,7 @@ import os
 import sys
 
 from consts import TOKEN, OWM_API_KEY, REDIS_URL
-from handlers import bot
+from handlers import start_polling
 
 if __name__ == '__main__':
     if TOKEN is None:
@@ -13,4 +13,4 @@ if __name__ == '__main__':
         sys.exit(1)
     if REDIS_URL is None:
         sys.stderr.write('Warning: REDIS_URL is not set, using local DB.' + os.linesep)
-    bot.polling()
+    start_polling()
